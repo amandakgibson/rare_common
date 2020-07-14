@@ -1,0 +1,307 @@
+---
+title: "Analyses and Graphs for Biology Letters Submission - Adaptation to Common v. Rare Clones"
+author: 
+date: "5/27/2020"
+output: html_document
+---
+
+Packages
+```{r}
+library(ggplot2)
+library(ggthemes)
+library(lme4)
+library(reshape2)
+library(afex)
+library(Hmisc)
+```
+
+fit plot function
+```{r}
+fitplot<-function(x){
+  plot(fitted(x), residuals(x), xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, lty = 2)
+lines(smooth.spline(fitted(x), residuals(x)))
+}
+```
+
+Data set - ancestral values
+```{r}
+datAnc<-read.csv("CommonClone_ancestor.csv",header=T)
+```
+
+Data set - adaptation to homogeneous host populations
+```{r}
+datHom<-read.csv("CommonClone_homogeneous.csv",header=T)
+```
+
+Data set - adaptation in heterogeneous host populations; common clone analysis
+```{r}
+dat<-read.csv("CommonClone_dataset.csv",header=T)
+dat$Line=factor(dat$Line)
+dat$Rep=factor(dat$Rep)
+summary(dat)
+dat<- within(dat, Frequency <- relevel(Frequency, ref = "common"))
+```
+
+Figure S1: ancestral values; electronic supplementary material
+```{r}
+# summarize
+ancM<-tapply(datAnc$Mortality,list(datAnc$Host),mean)
+ancSE<-tapply(datAnc$Mortality,list(datAnc$Host),sd)/sqrt(tapply(datAnc$Mortality,list(datAnc$Host),length))
+anc<-cbind(ancM,ancSE)
+host<-c("CB4856","ewIR 68","LTM1","N2")
+anc<-as.data.frame(anc)
+
+theme_set(theme_bw())
+FigS1<-ggplot(data=anc, aes(x=host, y=ancM)) +
+    geom_errorbar(aes(ymin=ancM-ancSE, ymax=ancM+ancSE), width=0,size=1,
+                  position=position_dodge(width=0.25)) +
+    geom_point(size=10, shape=21,color="#000000",stroke=2,position=position_dodge(width=0.25),fill="gray60") +
+    xlab("") + ylab("Mean Mortality Rate") +
+    ylim(0.5, 1) +
+  theme(axis.text.x = element_text(color="black", 
+                           size=14),
+          axis.text.y = element_text(color="black", 
+                           size=24),
+        axis.title.y=element_text(face="bold", color="black", 
+                           size=20),
+        legend.text = element_text(size=14),
+        legend.title = element_text(size=20))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+# statistical test of ancestral differences
+overdisp_fun <- function(model) {
+  rdf <- df.residual(model)
+  rp <- residuals(model,type="pearson")
+  Pearson.chisq <- sum(rp^2)
+  prat <- Pearson.chisq/rdf
+  pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+  c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+# supplementary analyses
+datAnc$Host = relevel(datAnc$Host, ref="ewIR 68")
+ancM1<-glmer(cbind(Dead,Live)~Host + (1|Assay),family="binomial",data=datAnc)
+overdisp_fun(ancM1) # yes
+datAnc$ID=factor(datAnc$ID)
+ancM2<-glmer(cbind(Dead,Live)~Host + (1|Assay) + (1|ID),family="binomial",data=datAnc) # overfit
+ancM3<-glmer(cbind(Dead,Live)~Host + (1|ID),family="binomial",data=datAnc)
+ancM4<-update(ancM3,.~.-Host)
+anova(ancM3,ancM4)
+summary(ancM3)
+```
+
+Figure S2: adaptation to homogeneous host populations
+Table S1
+```{r}
+mean<-tapply(datHom$Mortality,list(datHom$Host,datHom$TreatmentGroup),mean) # Table S1
+se<-tapply(datHom$Mortality,list(datHom$Host,datHom$TreatmentGroup),sd)/sqrt(tapply(datHom$Mortality,list(datHom$Host,datHom$TreatmentGroup),length))
+diff1=(mean[,3]-mean[,2])
+diff=diff1/mean[,2] # proportional increase from control
+diffse1=sqrt(se[,2]^2+se[,3]^2)
+diffse=diff*sqrt(((diffse1/diff1)^2)+((se[,2]/mean[,2])^2))
+
+Hom<-cbind(diff,diffse)
+host<-c("CB4856","ewIR 68","LTM1","N2")
+Hom<-as.data.frame(Hom)
+
+FigS2<-ggplot(data=Hom, aes(x=host, y=diff)) +
+      geom_hline(yintercept=0.0,linetype="dashed",color="gray40",size=1.4)+
+    geom_errorbar(aes(ymin=diff-diffse, ymax=diff+diffse), width=0,size=1,
+                  position=position_dodge(width=0.25)) +
+    geom_point(size=8, shape=21,color="#000000",stroke=2,position=position_dodge(width=0.25),fill="gray60") +
+    xlab("") + ylab("Mean Mortality Rate") +
+    ylim(-0.05, 0.8) +
+  theme(axis.text.x = element_text(color="black", 
+                           size=14),
+          axis.text.y = element_text(color="black", 
+                           size=24),
+        axis.title.y=element_text(face="bold", color="black", 
+                           size=20),
+        legend.text = element_text(size=14),
+        legend.title = element_text(size=20))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+data manipulation
+```{r}
+dat$Line=factor(dat$Line)
+dat$Rep=factor(dat$Rep)
+summary(dat)
+dat<- within(dat, Frequency <- relevel(Frequency, ref = "common"))
+
+# calculating change from ancestral values
+# mortality rates according to rare/common by each host genotype
+# proportional change
+change<-tapply(dat$PropChange,list(dat$Line,dat$Frequency),mean,na.rm=T)
+change<-data.frame(change)
+change[,3]=seq(1,36)
+colnames(change)=c("common","rare","id")
+#melt dataframe
+changedf<- melt(change, id.vars="id",variable.name="Frequency", value.name="change")
+changedf<- within(changedf, Frequency <- relevel(Frequency, ref = "rare"))
+changedf$Host=c(rep("N2",12),rep("LTM1",12),rep("CB4856",6),rep("ewir68",6),rep("LTM1",12),rep("N2",12),rep("ewir68",6), rep("CB4856",6))
+changedf$Common=c(rep("N2",12),rep("LTM1",12),rep("CB4856",6),rep("ewir68",6))
+
+# summary by common host
+changemean<-tapply(changedf$change,list(changedf$Common,changedf$Frequency),mean)
+changemean<-data.frame(changemean)
+changese<-tapply(changedf$change,list(changedf$Common,changedf$Frequency),sd)/sqrt(tapply(changedf$change,list(changedf$Common,changedf$Frequency),length))
+changemean$Common=c("CB4856","ewir68","LTM1","N2")
+
+# provides proportion change and SE by line - referenced in main text lines 165-171
+sumP<-melt(changemean, id.vars="Common")
+sumP$se<-c(changese[1:4,1],changese[1:4,2])
+
+```
+
+Figure 2
+```{r}
+# all lines, by panel
+Fig2 <-ggplot()+ 
+    geom_hline(yintercept=0.0,linetype="dashed",color="gray40",size=1.4)+
+    geom_line(data=changedf,aes(x=Frequency, y=change, group=id),size=1.05,color="gray60")+
+    geom_point(data=changedf,aes(x=Frequency, y=change, group=id),size=4, shape=21,color="gray60",fill="gray90",stroke=1.5) + 
+    xlab("") + ylab("") +
+  scale_y_continuous(breaks=seq(-0.4,0.2,0.1),limits=c(-0.42,0.19))+
+      geom_errorbar(dat=sumP,aes(x=variable,ymin=value-se, ymax=value+se), width=0,size=1)+  
+  geom_line(data=sumP,aes(x=variable,y=value,group=Common),size=1.1,color="black")+
+  geom_point(data=sumP,aes(x=variable,y=value,group=Common),size=6,shape=21,color="gray10",fill=c("#b2182b","#fddbc7","#d1e5f0","#2166ac","#fddbc7","#b2182b","#2166ac","#d1e5f0"),stroke=2)+
+  facet_grid(~Common)+
+  theme(axis.text.x = element_text(color="black", 
+                           size=14),
+          axis.text.y = element_text(color="black", 
+                           size=24),
+        legend.text = element_text(size=14),
+        legend.title = element_text(size=20))+
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+Fig2
+```
+
+Change from ancestor - linear model; Table S2
+```{r}
+dat$Frequency <- factor(dat$Frequency,c("rare","common") )
+dat$AssayHost <-factor(dat$AssayHost,c("ewIR68","CF3-wt-inv","N2","CB4856")) 
+
+# random effects: parasite line, nested within treatment, nested within experiment; assay number
+# predictors: Assayed host genotype (LTM1, N2, CB4856); host genotype frequency during exp evolution (rare or common)
+lmfit<-lmer(DiffAnc~AssayHost*Frequency  + (1|Experiment/ExperimentalTreatment/Line) + (1|AssayBlock), data=dat)
+# can't estimate parameters - remove experiment as random effect
+lmfit2<-lmer(DiffAnc~AssayHost * Frequency +  (1|ExperimentalTreatment/Line)+(1|AssayBlock), data=dat,control=lmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+anova(lmfit2) # Table S3A
+summary(lmfit2)
+# remove random effects
+# remove assayblock
+lmfit3<-lmer(DiffAnc~AssayHost * Frequency +  (1|ExperimentalTreatment/Line), data=dat, control=lmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+anova(lmfit2,lmfit3) 
+# remove experimental treatment
+lmfit4<-lmer(DiffAnc~AssayHost * Frequency +  (1|Line)+(1|AssayBlock), data=dat,control=lmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+anova(lmfit2,lmfit4)
+anova(lmfit4) #Table S3D
+# both
+lmfit5<-lmer(DiffAnc~AssayHost * Frequency +  (1|Line), data=dat,control=lmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5))) # given individual IDs of lines, this is effectively the same as nesting
+anova(lmfit4,lmfit5)
+
+# remove interaction
+dat$AssayHost=relevel(dat$AssayHost, ref="CB4856")
+dat$Frequency=relevel(dat$Frequency, ref="common")
+lmfit6<-lmer(DiffAnc~AssayHost + Frequency +  (1|ExperimentalTreatment/Line)+(1|AssayBlock), data=dat, control=lmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5))) # retaining treatment because of relevance to structure
+fitplot(lmfit6)
+anova(lmfit6) #Table S3B
+summary(lmfit6) # Table S3C
+anova(lmfit2,lmfit6)
+```
+
+alternative analysis 1
+non-parametric approach;Figure 2 and Table S2
+```{r}
+# calculating change from ancestral values
+# mortality rates according to rare/common by each host genotype
+# difference from the ancestor
+change2<-tapply(dat$DiffAnc,list(dat$Line,dat$Frequency),mean,na.rm=T)
+change2<-data.frame(change2)
+change2[,3]=seq(1,36)
+colnames(change2)=c("common","rare","id")
+#melt dataframe
+changedf2<- melt(change2, id.vars="id",variable.name="Frequency", value.name="change")
+changedf2<- within(changedf2, Frequency <- relevel(Frequency, ref = "rare"))
+changedf2$Host=c(rep("N2",12),rep("LTM1",12),rep("CB4856",6),rep("ewir68",6),rep("LTM1",12),rep("N2",12),rep("ewir68",6), rep("CB4856",6))
+changedf2$Common=c(rep("N2",12),rep("LTM1",12),rep("CB4856",6),rep("ewir68",6))
+# is diffanc shifted from 0?
+# all 36 lines
+wilcox.test(change2$rare,change2$common,paired=T,alternative="two.sided")
+wilcox.test(change2$rare-change2$common,alternative="two.sided")
+
+# individual tests
+# rare hosts
+changedf2_rare<-subset(changedf2,changedf$Frequency=="rare")
+
+# ewir68 rare
+ewIR68_rare<-subset(changedf2_rare,changedf2_rare$Host=="ewir68")
+wilcox.test(ewIR68_rare$change,mu=0,alternative="two.sided")
+# CB4856 rare
+CB4856_rare<-subset(changedf2_rare,changedf2_rare$Host=="CB4856")
+wilcox.test(CB4856_rare$change)
+# N2 rare
+N2_rare<-subset(changedf2_rare,changedf2_rare$Host=="N2")
+wilcox.test(N2_rare$change)
+# LTM1 rare
+LTM1_rare<-subset(changedf2_rare,changedf2_rare$Host=="LTM1")
+wilcox.test(LTM1_rare$change)
+
+# common hosts
+changedf2_common<-subset(changedf2,changedf$Frequency=="common")
+
+# ewir68 common
+ewIR68_common<-subset(changedf2_common,changedf2_common$Host=="ewir68")
+wilcox.test(ewIR68_common$change)
+# CB4856 common
+CB4856_common<-subset(changedf2_common,changedf2_common$Host=="CB4856")
+wilcox.test(CB4856_common$change)
+# N2 common
+N2_common<-subset(changedf2_common,changedf2_common$Host=="N2")
+wilcox.test(N2_common$change)
+# LTM1 common
+LTM1_common<-subset(changedf2_common,changedf2_common$Host=="LTM1")
+wilcox.test(LTM1_common$change)
+
+#calculating W+,W- 
+diff <- c(change2$rare-change2$common) 
+diff <- diff[ diff!=0 ] 
+diff.rank <- rank(abs(diff)) 
+diff.rank.sign <- diff.rank * sign(diff) 
+ranks.pos <- sum(diff.rank.sign[diff.rank.sign > 0]) 
+ranks.neg <- -sum(diff.rank.sign[diff.rank.sign < 0])
+ranks.pos 
+ranks.neg
+```
+
+alternative analysis 2
+meta-analysis
+Figure S3
+```{r}
+datMA<-read.csv("CommonClone_meta.csv",header=T)
+datMA<-datMA[1:4,8:21]
+
+library(metafor)
+# overall relationship
+res<-rma(yi = g, vi=Vg, data = datMA)
+
+# Figure S3
+forest(res,cex=2)
+```
+
+summary of proportional change
+```{r}
+# estimates of effect
+mean(change$common)
+mean(change$rare)
+sd(change$common)/sqrt(length(change$common))
+sd(change$rare)/sqrt(length(change$rare))
+
+mean(change$common-change$rare)
+median(change$common-change$rare)
+diff<-change$common-change$rare
+quartile <- as.numeric(cut2(diff, g=4))   #as.numeric to number the factors
+Bounds <- cut2(diff, g=4)
+```
